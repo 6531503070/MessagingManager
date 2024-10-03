@@ -1,7 +1,7 @@
 # MessagingManager
 
 A module centralized MessagingService topic subscription, by use one global endpoint.
-And provide freature, share publish request and scalable based on player size per server.
+And provide feature, share publish request and scalable based on player size per server.
 
 # Exmaple
 ```lua
