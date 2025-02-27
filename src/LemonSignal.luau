@@ -1,10 +1,7 @@
---!optimize 2
---!nocheck
---!native
+-- LemonSignal.luau
 
---[[
-	LemonSignal (https://data-oriented-house.github.io/LemonSignal/)
---]] 
+--!native
+--!optimize 2
 
 export type Connection<U...> = {
 	Connected: boolean,
@@ -16,8 +13,8 @@ export type Connection<U...> = {
 export type Signal<T...> = {
 	RBXScriptConnection: RBXScriptConnection?,
 
-	Connect: <U...>(self: Signal<T...>, fn: (...any) -> (), U...) -> Connection<U...>,
-	Once: <U...>(self: Signal<T...>, fn: (...any) -> (), U...) -> Connection<U...>,
+	Connect: <U...>(self: Signal<T...>, fn: (T...) -> (), U...) -> Connection<U...>,
+	Once: <U...>(self: Signal<T...>, fn: (T...) -> (), U...) -> Connection<U...>,
 	Wait: (self: Signal<T...>) -> T...,
 	Fire: (self: Signal<T...>, T...) -> (),
 	DisconnectAll: (self: Signal<T...>) -> (),
@@ -130,7 +127,9 @@ local wait = if task
 		local cn
 		cn = connect(self, function(...)
 			disconnect(cn)
-			task.spawn(thread, ...)
+			if coroutine.status(thread) == "suspended" then
+				task.spawn(thread, ...)
+			end
 		end)
 		return coroutine.yield()
 	end

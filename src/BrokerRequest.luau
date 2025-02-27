@@ -1,97 +1,117 @@
---!native
---!optimize 2
-
 --[[
-	BrokerRequest @Dev_Bas
+	@Dev_Bas
+	BrokerRequest v1.0.0:
 	A module iteration async call in an efficient way.
 --]]
 
-local Signal = require(script.Parent.Signal)
-local Module = {}
-Module.__index = Module
+--!native
+--!optimize 2
 
-function Module.new(ProccessPerIteration: number?, RequestAttemptLimit: number?)
-	local self = setmetatable({}, Module)
+local LemonSignal = require(script.Parent.LemonSignal)
+local BrokerRequest = {}
+BrokerRequest.__index = BrokerRequest
+
+function BrokerRequest.new(ProccessPerIteration: number?, RequestAttemptLimit: number?)
+	local self = setmetatable({}, BrokerRequest)
+
 	self.ProccessPerIteration = ProccessPerIteration or 4
 	self.RequestAttemptLimit = RequestAttemptLimit or 3
-	--// Output
+	-- IO table
 	self.Requests = {}
 	self.Responses = {}
+
 	return self
 end
 
-function Module:AddRequest(Function: (Quota: number) -> ())
+function BrokerRequest:AddRequest(Function: (Quota: number) -> ())
 	table.insert(self.Requests, Function)
+
 	return self
 end
 
---// @yieldable
-function Module:Run(Callback: (Success: boolean, Responsse: any, Error: string?) -> ()?): thread | any
+-- @yieldable
+function BrokerRequest:Run(Callback: (Success: boolean, Responsse: any, Error: string?) -> ()?): thread | any
 	table.clear(self.Responses)
-	local OverallSuccess = true
-	local Responses = self.Responses
-	local Requests = self.Requests
-	local function Process()
-		while (#Requests > 0) do
-			local ChunkData = {
-				OnComplete = Signal.new(),
-				WorkLoad = math.min(table.maxn(Requests), self.ProccessPerIteration),
-				WorkComplete = 0,
+
+	local overallSuccess = true
+	local responses = self.Responses
+	local requests = self.Requests
+
+	local function process()
+		while #requests > 0 do
+			local chunkData = {
+				onComplete = LemonSignal.new(),
+				workLoad = math.min(table.maxn(requests), self.ProccessPerIteration),
+				workComplete = 0,
 			}
-			for Load = 1, ChunkData.WorkLoad do
-				local GetPage = math.max(1, (table.maxn(Requests) - Load) + 1)
-				local WorkNode = Requests[GetPage]
-				if (WorkNode) then
-					coroutine.wrap(function(Chunk, Quota: number)
-						local Success, Response, Error repeat
-							Success, Response, Error = unpack(WorkNode())
-							if (not Success) then
-								Quota -= 1
+
+			for load = 1, chunkData.workLoad do
+				local getPage = math.max(1, (table.maxn(requests) - load) + 1)
+				local workNode = requests[getPage]
+
+				if workNode then
+					coroutine.wrap(function(chunk, quota: number)
+						local ok, res, err
+						repeat
+							ok, res, err = unpack(workNode())
+
+							if not ok then
+								quota -= 1
 								task.wait(1)
 							end
-						until Success or (Quota <= 0)
+						until ok or (quota <= 0)
+
 						task.wait()
-						--// @Promise
-						if (not Success) then
-							OverallSuccess = false
+
+						-- Promise-like
+						if not ok then
+							overallSuccess = false
 						end
-						local Sent = {Success, Response, Error}
-						Responses[GetPage] = Sent
-						Requests[GetPage] = nil
-						Chunk.WorkComplete += 1
-						if (Chunk.WorkComplete == Chunk.WorkLoad) then
-							Chunk.OnComplete:Fire()
-							Chunk.OnComplete = nil
+
+						local Sent = { ok, res, err }
+
+						responses[getPage] = Sent
+						requests[getPage] = nil
+						chunk.workComplete += 1
+
+						if chunk.workComplete == chunk.workLoad then
+							chunk.onComplete:Fire()
+							chunk.onComplete = nil
 						end
-						if (type(Callback) == "function") then
+
+						if type(Callback) == "function" then
 							Callback(unpack(Sent))
 						end
-					end)(ChunkData, self.RequestAttemptLimit)
+					end)(chunkData, self.RequestAttemptLimit)
 				end
 			end
-			if (ChunkData.OnComplete) then
-				ChunkData.OnComplete:Wait()
-				ChunkData.OnComplete:Destroy()
-				ChunkData.OnComplete = nil
+			if chunkData.onComplete then
+				chunkData.onComplete:Wait()
+				chunkData.onComplete:Destroy()
+				chunkData.onComplete = nil
 			end
 		end
 	end
-	if (type(Callback) == "function") then
-		return task.spawn(Process) -- Async @no-yield
+
+	if type(Callback) == "function" then
+		-- @noyield (Async)
+		return task.spawn(process)
 	else
-		Process() -- Sync @yield
+		-- @yield (Sync)
+		process()
 	end
-	return Responses, OverallSuccess
+
+	return responses, overallSuccess
 end
 
-function Module:Clear()
+function BrokerRequest:Clear()
 	table.clear(self.Requests)
 	table.clear(self.Responses)
 end
 
-function Module:Destroy()
+function BrokerRequest:Destroy()
 	setmetatable(self, nil)
 	table.clear(self)
 end
 
-return Module
+return BrokerRequest
