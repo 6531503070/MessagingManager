@@ -1,10 +1,10 @@
 [package]
 name = "6531503070/messagingmanager"
-version = "2.0.0"
+version = "2.0.1"
 registry = "https://github.com/UpliftGames/wally-index"
 licence = "MIT"
 authors = ["6531503070"]
-description = "A module that centralized and optimized roblox MessagingService in the efficiency way."
+description = "A typed roblox module for dealing MessagingService with an efficient way."
 realm = "shared"
 exclude = ["**"]
 include = [

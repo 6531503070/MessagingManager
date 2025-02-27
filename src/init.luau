@@ -1,6 +1,6 @@
 --[[
 	@Dev_Bas
-	MessagingManager v2.0.0:
+	MessagingManager v2.0.1:
 	A typed roblox module for dealing MessagingService with an efficient way.
 ]]
 
