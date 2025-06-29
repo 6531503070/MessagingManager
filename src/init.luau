@@ -28,7 +28,7 @@ end
 -- @overwrite
 local _warn = warn
 local function warn(...)
-	if Constants.ENABLE_WARN_LOG then _warn(...) end
+	if Constants.ENABLE_LOG then _warn(...) end
 end
 
 --[=[
@@ -50,16 +50,16 @@ MessagingManager.factory_function = function(message)
 		end
 
 		if ok then
-			if type(messaging) == "table" then
-				local topic = messaging[1] -- Topic
+			if type(message_data) == "table" then
+				local topic = message_data[1] -- Topic
 				local messaging_manager_object = _G.Message[topic]
 
 				if messaging_manager_object then
 					if type(messaging_manager_object.callback) == "function" then
-						local request = messaging[2] -- Request
-						local broadcaster_server_metadata = messaging[3] -- BroadcasterServerMetadata
+						local request = message_data[2] -- Request
+						local broadcaster_server_metadata = message_data[3] -- BroadcasterServerMetadata
 						local current_server_metadata = messaging_metadata()
-						local invoke_token = messaging[4] -- InvokeToken?
+						local invoke_token = message_data[4] -- InvokeToken?
 
 						-- do a safe callback and get info.
 						local ok: boolean, err: string, response
@@ -109,7 +109,7 @@ do
 				do
 					ok, err = pcall(function()
 						response = {}
-						response.Key = `G{KEY_ENDPOINT}{Id}`
+						response.Key = `G{Constants.KEY_ENDPOINT}{game.JobId}`
 						response.Subscriber =
 							MessagingService:SubscribeAsync(response.Key, MessagingManager.factory_function)
 					end)
@@ -123,8 +123,8 @@ do
 			for i, concurResult in ipairs(values) do
 				local _, result = table.unpack(concurResult)
 				if result then
-					local channelInfo = result[2]
-					if channelInfo then _G.LiveChannels[channelInfo.Key] = channelInfo end
+					local channel_info = result[2]
+					if channel_info then _G.LiveChannels[channel_info.Key] = channel_info end
 				end
 			end
 		end)
@@ -377,14 +377,14 @@ end
 ---
 --- @within MessagingManager
 function MessagingManager:DisconnectAll()
-	if typeof(player_added_connection) == "RBXScriptConnection" then
-		player_added_connection:Disconnect()
-		player_added_connection = nil
+	if typeof(MessagingManager._connections.player_added) == "RBXScriptConnection" then
+		MessagingManager._connections.player_added:Disconnect()
+		MessagingManager._connections.player_added = nil
 	end
 
-	if typeof(player_removing_connection) == "RBXScriptConnection" then
-		player_removing_connection:Disconnect()
-		player_removing_connection = nil
+	if typeof(MessagingManager._connections.player_removing) == "RBXScriptConnection" then
+		MessagingManager._connections.player_removing:Disconnect()
+		MessagingManager._connections.player_removing = nil
 	end
 
 	for topic in _G.Message do
@@ -433,7 +433,7 @@ do
 			task.spawn(function()
 				local concurs = {}
 
-				for subChannel = 1, Constants.UNIT_SCALE_PER_PLAYER do
+				for sub_channel = 1, Constants.UNIT_SCALE_PER_PLAYER do
 					table.insert(
 						concurs,
 						Concur.spawn(function()
@@ -441,7 +441,7 @@ do
 							do
 								ok, err = pcall(function()
 									response = {}
-									response.Key = `@{userId}{Constants.KEY_ENDPOINT}{subChannel}`
+									response.Key = `@{userId}{Constants.KEY_ENDPOINT}{sub_channel}`
 									response.Subscriber =
 										MessagingService:SubscribeAsync(response.Key, MessagingManager.factory_function)
 								end)
@@ -453,11 +453,11 @@ do
 
 					local all = Concur.all(concurs)
 					all:OnCompleted(function(_, values)
-						for _, concurResult in ipairs(values) do
-							local _, result = table.unpack(concurResult)
+						for _, concur_result in ipairs(values) do
+							local _, result = table.unpack(concur_result)
 							if result then
-								local channelInfo = result[2]
-								if channelInfo then _G.LiveChannels[channelInfo.Key] = channelInfo end
+								local channel_info = result[2]
+								if channel_info then _G.LiveChannels[channel_info.Key] = channel_info end
 							end
 						end
 						-- print(values) --> {{nil, 10}, {nil, 15}, {nil, 20}, {"failed", nil}}
@@ -472,13 +472,13 @@ do
 				end
 			end)
 		else
-			for subChannel = 1, Constants.UNIT_SCALE_PER_PLAYER do
-				local key = `@{userId}{Constants.KEY_ENDPOINT}{subChannel}`
-				local channelInfo = _G.LiveChannels[key]
+			for sub_channel = 1, Constants.UNIT_SCALE_PER_PLAYER do
+				local key = `@{userId}{Constants.KEY_ENDPOINT}{sub_channel}`
+				local channel_info = _G.LiveChannels[key]
 
-				if type(channelInfo) == "table" then
-					pcall(channelInfo.Subscriber.Disconnect, channelInfo.Subscriber)
-					table.clear(channelInfo)
+				if type(channel_info) == "table" then
+					pcall(channel_info.Subscriber.Disconnect, channel_info.Subscriber)
+					table.clear(channel_info)
 					_G.LiveChannels[key] = nil
 				end
 			end

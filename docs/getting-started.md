@@ -11,7 +11,7 @@ MessagingManager is a library for handling MessagingService better and efficient
 Add MessagingManager to your `wally.toml`:
 
 ```toml
-MessagingManager = "6531503070/messagingmanager@2.0.3"
+MessagingManager = "6531503070/messagingmanager@2.0.4"
 ```
 
 :::tip

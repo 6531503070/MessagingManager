@@ -1,8 +1,8 @@
 # github/workflows
-.github/workflows/ci.yml
-.github/workflows/publish-docs.yml
-.github/workflows/build.yml
-.github/workflows/release-packages.yml
+# .github/workflows/ci.yml
+# .github/workflows/publish-docs.yml
+# .github/workflows/build.yml
+# .github/workflows/release-packages.yml
 
 # IDE files
 .idea/

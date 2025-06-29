@@ -1,0 +1,38 @@
+name: Release Package
+
+on:
+    push:
+        tags:
+            - "v*.*.*"
+
+jobs:
+    release:
+        runs-on: [ubuntu-latest]
+        permissions:
+            contents: write
+            packages: write
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rokit
+              uses: CompeyDev/setup-rokit@v0.1.2
+
+            - name: Build Package
+              run: rojo build --output UID.rbxm build.project.json
+
+            - name: Create Release
+              run: gh release create $GITHUB_REF_NAME --generate-notes
+              env:
+                  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+            - name: Upload Release Asset
+              run: gh release upload $GITHUB_REF_NAME UID.rbxm
+              env:
+                  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+    docs:
+        needs: release
+        permissions:
+            contents: write
+        uses: ./.github/workflows/publish-docs.yml
+        secrets: inherit
