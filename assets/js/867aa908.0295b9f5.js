@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[347],{361:s=>{s.exports=JSON.parse('{"functions":[],"properties":[],"types":[],"name":"Constants","desc":"Module containing constant values used throughout the MessagingManager.","private":true,"source":{"line":7,"path":"src/Constants.luau"}}')}}]);

@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[580],{4410:s=>{s.exports=JSON.parse('{"sourceUrl":"https://github.com/6531503070/MessagingManager/blob/main","baseUrl":"/MessagingManager/","classOrder":[{"classes":["MessagingManagerObject","MessagingManager"]}],"apiCategories":[]}')}}]);
