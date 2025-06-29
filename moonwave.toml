@@ -1,3 +1,29 @@
+title = "MessagingManager"
+gitRepoUrl = "https://github.com/6531503070/MessagingManager"
+gitSourceBranch = "main"
+changelog = true
+
+[[classOrder]]
+classes = ["MessagingManagerObject", "MessagingManager"]
+
+[docusaurus]
+onBrokenLinks = "throw"
+onBrokenMarkdownLinks = "warn"
+tagline = "A wrapper module dealing MessagingService better and efficient for Roblox"
+baseUrl = "/MessagingManager/"
+
 [home]
 enabled = true
 includeReadme = false
+
+[[footer.links]]
+title = "Links"
+
+[[footer.links.items]]
+label = "GitHub"
+href = "https://github.com/6531503070/MessagingManager"
+
+[[navbar.items]]
+href = "https://wally.run/package/6531503070/messagingmanager"
+label = "Wally"
+position = "right"

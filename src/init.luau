@@ -1,511 +1,237 @@
---[[
-	@Dev_Bas
-	MessagingManager v2.0.1:
-	A typed roblox module for dealing MessagingService with an efficient way.
-]]
+-- MessagingManager
+-- Ratchanon Suwatsiriphol
 
+local HttpService = game:GetService("HttpService")
+local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local MessagingService = game:GetService("MessagingService")
-local HttpService = game:GetService("HttpService")
+local ServerScriptService = game:GetService("ServerScriptService")
 
-local Token = require(script.Token)
-local LemonSignal = require(script.LemonSignal)
-local BrokerRequest = require(script.BrokerRequest)
+local Concur = require(ServerScriptService.ServerPackages.Concur)
+local Quid = require(ServerScriptService.ServerPackages.Quid)
+local Signal = require(ServerScriptService.ServerPackages.Signal)
+local messaging_metadata = require(script.messaging_metadata)
+
+local Constants = require(script.Constants)
+local MessagingManagerObject = require(script.MessagingManagerObject)
+local next_number = require(script.next_number)
 
 _G.Message = _G.Message or {}
 _G.Invokes = _G.Invokes or {}
 _G.LiveChannels = _G.LiveChannels or {}
 
--- .DevConfigs
-local KEY_ENDPOINT = "/"
-local DEFAULT_RESPONSE_TIME = 6 -- 6 Seconds, Automatic Disconnect :Invoke().
-local DEFAULT_MAX_CHANNEL = 15 -- Max is 20 (Based from MessagingService).
-local UNIT_SCALE_PER_PLAYER = 5 -- Max is 8 (Based from MessagingService).
-local SIMULATE_DELAY = { 0.5, 1.5 } -- Simulate delay when testing on studio.
-local SHOW_LOG = false
+-- @overwrite
+local _print = print
+local function print(...)
+	if Constants.ENABLE_LOG then _print(...) end
+end
 
+-- @overwrite
 local _warn = warn
 local function warn(...)
-	if SHOW_LOG then
-		_warn(...)
-	end
+	if Constants.ENABLE_WARN_LOG then _warn(...) end
 end
-local random = Random.new()
-
-local function listPlayers()
-	local getPlayers = Players:GetPlayers()
-	local dictOfUserIds = {}
-
-	for _, player in ipairs(getPlayers) do
-		dictOfUserIds[`{player.UserId}`] = 0
-	end
-
-	return dictOfUserIds, #getPlayers
-end
-
-type UserId = {}
-
-local function messagingMetadata<T>(rawServerMetadata: T)
-	if type(rawServerMetadata) == "table" then
-		return {
-			GameId = rawServerMetadata[1] :: number,
-			PlaceId = rawServerMetadata[2] :: number,
-			PlaceVersion = rawServerMetadata[3] :: number,
-			JobId = rawServerMetadata[4] :: string,
-			Players = rawServerMetadata[5] :: { [UserId]: any },
-			TotalPlayers = rawServerMetadata[6] :: number,
-		}
-	end
-
-	local dictOfUserIds, currentNumPlayers = listPlayers()
-
-	return {
-		game.GameId,
-		game.PlaceId,
-		game.PlaceVersion,
-		game.JobId,
-		dictOfUserIds,
-		currentNumPlayers,
-	}
-end
-
-export type MessagingMetadata = typeof(messagingMetadata())
 
 --[=[
 	@class MessagingManager
+	A wrapper module dealing MessagingService better and efficient for Roblox
 ]=]
 local MessagingManager = {}
 
-do -- @Setup // MessagingService (Centralized)
-	CentralizedEndpoint = function(message)
-		local data, sent = message.Data, message.Sent
+-- Setup // MessagingService (Centralized)
+-- An endpoint for receiving the message from the other server.
+MessagingManager.factory_function = function(message)
+	local data, sent = message.Data, message.Sent
+	if type(data) == "buffer" then
+		local ok: boolean, err: string, message_data
+		do
+			ok, err = pcall(function()
+				message_data = HttpService:JSONDecode(buffer.tostring(data))
+			end)
+		end
 
-		if type(data) == "buffer" then
-			local ok: boolean, err: string, messaging
-			do
-				ok, err = pcall(function(...)
-					messaging = HttpService:JSONDecode(buffer.tostring(data))
-				end)
-			end
+		if ok then
+			if type(messaging) == "table" then
+				local topic = messaging[1] -- Topic
+				local messaging_manager_object = _G.Message[topic]
 
-			if ok then
-				if type(messaging) == "table" then
-					local topic = messaging[1] -- Topic
-					local messagingManagerObject = _G.Message[topic]
+				if messaging_manager_object then
+					if type(messaging_manager_object.callback) == "function" then
+						local request = messaging[2] -- Request
+						local broadcaster_server_metadata = messaging[3] -- BroadcasterServerMetadata
+						local current_server_metadata = messaging_metadata()
+						local invoke_token = messaging[4] -- InvokeToken?
 
-					if messagingManagerObject then
-						if type(messagingManagerObject.Callback) == "function" then
-							local request = messaging[2] -- Request
-							local broadcasterServerMetadata = messaging[3] -- BroadcasterServerMetadata
-							local currentServerMetadata = messagingMetadata()
-							local invokeToken = messaging[4] -- InvokeToken?
+						-- do a safe callback and get info.
+						local ok: boolean, err: string, response
+						do
+							ok, err = pcall(function(...)
+								response = {
+									messaging_manager_object.callback(
+										request,
+										messaging_metadata(current_server_metadata),
+										messaging_metadata(broadcaster_server_metadata)
+									),
+								}
+							end)
+						end
 
-							-- do a safe callback and get info.
-							local ok: boolean, err: string, response
-							do
-								ok, err = pcall(function(...)
-									response = {
-										messagingManagerObject.Callback(
-											request,
-											messagingMetadata(currentServerMetadata),
-											messagingMetadata(broadcasterServerMetadata)
-										),
-									}
-								end)
-							end
+						-- return a response cross-server to self :Invoke() identity from token.
+						if type(invoke_token) == "string" then
+							if type(response) == "table" and #response > 0 then
+								local target_job_id: string = response[1]
 
-							-- return a response cross-server to self :Invoke() identity from token.
-							if type(invokeToken) == "string" then
-								if type(response) == "table" and #response > 0 then
-									local targetJobId: string = response[1]
+								table.move(response, 2, #response, 1, response)
+								response[#response] = nil
 
-									table.move(response, 2, #response, 1, response)
-									response[#response] = nil
-
-									MessagingManager.FireTo("MessagingInvokeReceptor", {
-										game.JobId,
-										targetJobId,
-										response,
-										invokeToken,
-									})
-								end
+								MessagingManager.FireTo("messaging_invoke_receptor", {
+									game.JobId,
+									target_job_id,
+									response,
+									invoke_token,
+								})
 							end
 						end
 					end
 				end
 			end
 		end
-	end -- Blueprint
+	end
+end -- Blueprint
 
-	do
-		print("MessagingManager is connecting.")
+do
+	print("MessagingManager is connecting.")
+	if RunService:IsRunning() and RunService:IsServer() then
+		local concurs = {}
+		table.insert(
+			concurs,
+			Concur.spawn(function(...: any)
+				local ok, err, response
+				do
+					ok, err = pcall(function()
+						response = {}
+						response.Key = `G{KEY_ENDPOINT}{Id}`
+						response.Subscriber =
+							MessagingService:SubscribeAsync(response.Key, MessagingManager.factory_function)
+					end)
+				end
+				return { ok, response, err }
+			end)
+		)
 
-		if RunService:IsRunning() and RunService:IsServer() then
-			local Broker = BrokerRequest.new(20, 10)
-
-			for Id = 1, DEFAULT_MAX_CHANNEL do
-				Broker:AddRequest(function()
-					local ok, err, response
-					do
-						ok, err = pcall(function()
-							response = {}
-							response.Key = `G{KEY_ENDPOINT}{Id}`
-							response.Subscriber = MessagingService:SubscribeAsync(response.Key, CentralizedEndpoint)
-						end)
-					end
-					return { ok, response, err }
-				end)
-			end
-
-			local responseBlock, overallSuccess = Broker:Run()
-			if not overallSuccess then
-				warn("MessagingManager, some channel are missing.")
-			end
-
-			for _, wrap in responseBlock do
-				local channelInfo = wrap[2]
-
-				if channelInfo then
-					_G.LiveChannels[channelInfo.Key] = channelInfo
+		local all = Concur.all(concurs)
+		all:OnCompleted(function(err, values)
+			for i, concurResult in ipairs(values) do
+				local _, result = table.unpack(concurResult)
+				if result then
+					local channelInfo = result[2]
+					if channelInfo then _G.LiveChannels[channelInfo.Key] = channelInfo end
 				end
 			end
-		end
-
-		print("MessagingManager is ready.")
-	end
-end
-
---[=[
-	@class MessagingManagerObject
-]=]
-local MessagingManagerObject = {}
-MessagingManagerObject.__index = MessagingManagerObject
-
---[=[
-	Rename entry point of the MessagingService subscription.
-]=]
-function MessagingManagerObject:Rename(newTopic: string)
-	if _G.Message[newTopic] then
-		warn("MessagingManagerObject, new topic was used. (Proccess Skipped)")
-		return self
-	end
-
-	local previousTopic = self.Topic
-
-	if _G.Message[previousTopic] == self then
-		_G.Message[previousTopic] = nil
-		self.Topic = newTopic
-		_G.Message[newTopic] = self
-	end
-
-	return self
-end
-
---[=[
-	Disconnect to the MessagingService subscription.
-]=]
-function MessagingManagerObject:Disconnect()
-	local topic = self.Topic
-	local messagingManagerObject = _G.Message[topic]
-
-	table.clear(messagingManagerObject)
-	_G.Message[topic] = nil
-end
-
---[=[
-	Aliase of `:Disconnect()` method.
-]=]
-function MessagingManagerObject:Destroy()
-	self:Disconnect()
-end
-
---[=[
-	(One-way communication) Messaging to topic to do an action (Not-Guaranteed)
-<strong>
-	@yields
-	
-	@param request: T
-	@param includingMetadata: boolean? -- [default=false] including metadata example server jobId.
-	
-	@error
-</strong><p><em>--Style: Moonwave Documentation</em>
-]=]
-function MessagingManagerObject:Fire<T>(request: T)
-	if self.Topic == nil then
-		error(`MessagingManagerObject not found.`)
-	end
-
-	local broadcasterServerMetadata: MessagingMetadata = messagingMetadata()
-
-	if RunService:IsStudio() then
-		-- In-Simulation
-		warn(`(Studio-Mode), MessagingManagerObject {self.Topic} is simulate not real production.`)
-
-		task.wait(random:NextNumber(unpack(SIMULATE_DELAY)))
-
-		local ok: boolean, err: string
-		do
-			ok, err = pcall(function(...)
-				self.Callback(
-					request,
-					messagingMetadata(messagingMetadata()),
-					messagingMetadata(broadcasterServerMetadata)
-				)
-			end)
-		end
-
-		if not ok then
-			error(err)
-		end
-	else
-		-- In-Production
-		local NextKey, NextChannelInfo = next(_G.LiveChannels, self._NextKey)
-
-		if type(NextChannelInfo) == "table" then
-			local ok: boolean, err: string
-			do
-				ok, err = pcall(function(...)
-					MessagingService:PublishAsync(
-						NextChannelInfo.Key,
-						buffer.fromstring(HttpService:JSONEncode({
-							self.Topic, -- [1] = Topic
-							request, -- [2] = Request
-							broadcasterServerMetadata, -- [3] = BroadcasterServerMetadata
-						}))
-					)
-				end)
-			end
-
-			if not ok then
-				error(err)
-			end
-		end
-
-		self._NextKey = NextKey
-	end
-end
-
---[=[
-	(Two-way communication) Messaging to topic to do an action and get the response (Not-Guaranteed).
-<strong>
-	@yields
-	
-	@param request: T
-	@param approxResponseTime: number? -- [default=6] a waiting seconds before disconnect and return nil response.
-	@param includingMetadata: boolean? -- [default=false] including metadata example server jobId?
-	@return any
-	
-	@error
-</strong><p><em>--Style: Moonwave Documentation</em>
-]=]
-function MessagingManagerObject:Invoke<T>(request: T, approxResponseTime: number?)
-	if self.Topic == nil then
-		error(`MessagingManagerObject not found.`)
-	end
-
-	local invokeToken = `{self.Topic}-{Token:NextBase94JSONSAFE(16)}` -- 94^16 possibility.
-	local signal = LemonSignal.new()
-
-	_G.Invokes[invokeToken] = signal
-
-	local broadcasterServerMetadata: MessagingMetadata = messagingMetadata()
-
-	if RunService:IsStudio() then
-		-- In-Simulation
-		task.delay(random:NextNumber(unpack(SIMULATE_DELAY)), function()
-			local ok: boolean, err: string, response
-			do
-				ok, err = pcall(function(...)
-					response = {
-						self.Callback(
-							request,
-							messagingMetadata(messagingMetadata()),
-							messagingMetadata(broadcasterServerMetadata)
-						),
-					}
-				end)
-			end
-
-			task.wait(random:NextNumber(unpack(SIMULATE_DELAY)))
-			signal:Fire(response)
 		end)
 
-		task.delay(approxResponseTime or DEFAULT_RESPONSE_TIME, function()
-			signal:Fire()
-		end)
-
-		local response = signal:Wait()
-
-		-- clean signal prevent memory leak.
-		task.defer(function()
-			if signal then
-				signal:Destroy()
-			end
-
-			_G.Invokes[invokeToken] = nil
-		end)
-
-		if type(response) == "table" then
-			return unpack(response)
+		local _, result = all:Await()
+		if type(result) == "table" and result[3] then
+			warn(`[MessagingManager]: Due to error {result[3]}, some channel will be missing.`)
 		end
 
-		return response
-	else
-		-- In-Production
-		task.spawn(function()
-			local NextKey, NextChannelInfo = next(_G.LiveChannels, self._NextKey)
-
-			if type(NextChannelInfo) == "table" then
-				MessagingService:PublishAsync(
-					NextChannelInfo.Key,
-					buffer.fromstring(HttpService:JSONEncode({
-						self.Topic, -- [1] = Topic
-						request, -- [2] = Request
-						broadcasterServerMetadata, -- [3] = BroadcasterServerMetadata
-						invokeToken, -- [4] = InvokeToken?
-					}))
-				)
-			end
-
-			self._NextKey = NextKey
-		end)
-
-		task.delay(approxResponseTime or DEFAULT_RESPONSE_TIME, function()
-			signal:Fire()
-		end)
-
-		local response = signal:Wait()
-
-		-- clean signal prevent memory leak.
-		task.defer(function()
-			if signal then
-				signal:Destroy()
-			end
-
-			_G.Invokes[invokeToken] = nil
-		end)
-
-		if type(response) == "table" then
-			return unpack(response)
-		end
-
-		return response
+		table.clear(concurs)
 	end
+	print("MessagingManager is ready.")
 end
 
---////////////////////////////////////////////////////////////////////////////////////////////////////
--- @class MessagingManager
---\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-
---[=[
-	Creating a MessagingManagerObject.
-<strong>
-	@param topic: string
-	@param callback: (...) -> ()
-	
-	@return MessagingManagerObject
-</strong><p><em>--Style: Moonwave Documentation</em>
-]=]
+--- Creating a MessagingManagerObject.
+---
+--- @within MessagingManager
+--- @param topic string
+--- @param callback (request: T, current_server_metadata: MessagingMetadata, broadcaster_server_metadata: MessagingMetadata) -> ()
+--- @return MessagingManagerObject
 function MessagingManager.new<T>(
 	topic: string,
 	callback: (
 		request: T,
-		currentServerMetadata: MessagingMetadata,
-		broadcasterServerMetadata: MessagingMetadata
+		current_server_metadata: messaging_metadata.MessagingMetadata,
+		broadcaster_server_metadata: messaging_metadata.MessagingMetadata
 	) -> ()
 )
 	local self = setmetatable({}, MessagingManagerObject)
-	self.Topic = topic
-	self.Callback = callback
-	self._NextKey = nil
+	self.topic = topic
+	self.callback = callback
+	self._nextkey = nil
 
-	local MessagingManagerObjectExist = _G.Message[topic]
-
-	if not MessagingManagerObjectExist then
+	local messaging_manager_object_exist = _G.Message[topic]
+	if not messaging_manager_object_exist then
 		-- :new()
 		_G.Message[topic] = self
 		return self
 	else
 		-- :get()
 		warn("MessagingManager, topic is already exist. (Return Exist)")
-		return MessagingManagerObjectExist
+		return messaging_manager_object_exist
 	end
 end
 
---[=[
-	Creating a MessagingManagerObject.
-<strong>
-	@param topic: string
-	@param callback: (...) -> ()
-	
-	@return MessagingManagerObject
-</strong><p><em>--Style: Moonwave Documentation</em>
-]=]
+--- Destroy a MessagingManagerObject.
+---
+--- @within MessagingManager
+--- @param topic string
 function MessagingManager.DestroyTo(topic: string)
-	local messagingManagerObject = _G.Message[topic]
-
-	if messagingManagerObject then
-		messagingManagerObject:Destroy()
-	end
+	local messaging_manager_object = _G.Message[topic]
+	if messaging_manager_object then messaging_manager_object:Destroy() end
 end
 
 _G._NextGlobalKey = nil
 
---[=[
-	(One-way communication) Messaging to topic to do an action (Not-Guaranteed)
-<strong>
-	@yields
-	
-	@param topic: string
-	@param request: T
-	@param includingMetadata: boolean? -- [default=false] including metadata example server jobId.
-	
-	@error
-</strong><p><em>--Style: Moonwave Documentation</em>
-]=]
-function MessagingManager.FireTo<T>(topic: string, request: T)
-	local broadcasterServerMetadata: MessagingMetadata? = messagingMetadata()
+--- (One-way communication) Messaging to topic to do an action (Not-Guaranteed).
+---
+--- @yields
+--- @within MessagingManager
+--- @param topic string
+--- @param request T
+--- @param including_metadata boolean? -- [default=false] including metadata example server jobId.
+--- @error "MessagingManagerObject not found."
+function MessagingManager.FireTo<T>(topic: string, request: T, including_metadata: boolean?)
+	local broadcaster_server_metadata: messaging_metadata.MessagingMetadata? = if including_metadata
+		then messaging_metadata()
+		else nil
 
-	local ok: boolean, err: string, nextKey, nextChannelInfo
+	local ok: boolean, err: string, next_key, next_channel_info
 	do
 		ok, err = pcall(function()
-			nextKey, nextChannelInfo = next(_G.LiveChannels, _G._NextGlobalKey)
+			next_key, next_channel_info = next(_G.LiveChannels, _G._NextGlobalKey)
 		end)
 
 		if not ok then
-			nextKey, nextChannelInfo = next(_G.LiveChannels)
+			next_key, next_channel_info = next(_G.LiveChannels)
 		end
 	end
 
-	if type(nextChannelInfo) == "table" then
+	if type(next_channel_info) == "table" then
 		if RunService:IsStudio() then
 			-- In-Simulation
-			local messagingManagerObject = _G.Message[topic]
+			local messaging_manager_object = _G.Message[topic]
 
-			if messagingManagerObject then
+			if messaging_manager_object then
 				warn(
-					`(Studio-Mode), MessagingManagerObject {messagingManagerObject.Topic} is simulate not real production.`
+					`(Studio-Mode), MessagingManagerObject {messaging_manager_object.topic} is simulate not real production.`
 				)
 
-				task.wait(random:NextNumber(unpack(SIMULATE_DELAY)))
+				task.wait(next_number(table.unpack(Constants.SIMULATE_DELAY)))
 
 				local ok: boolean, err: string
 				do
 					ok, err = pcall(function(...)
-						messagingManagerObject.Callback(
+						messaging_manager_object.callback(
 							request,
-							messagingMetadata(),
-							messagingMetadata(broadcasterServerMetadata)
+							messaging_metadata(),
+							messaging_metadata(broadcaster_server_metadata)
 						)
 					end)
 				end
 
-				if not ok then
-					error(err)
-				end
+				if not ok then error(err) end
 			else
-				error(`(Studio-Mode), MessagingManagerObject {topic} not found.`)
+				error("(Studio-Mode), MessagingManagerObject not found")
 			end
 		else
 			-- In-Production
@@ -513,87 +239,87 @@ function MessagingManager.FireTo<T>(topic: string, request: T)
 			do
 				ok, err = pcall(function(...)
 					MessagingService:PublishAsync(
-						nextChannelInfo.Key,
+						next_channel_info.Key,
 						buffer.fromstring(HttpService:JSONEncode({
 							topic, -- [1] = Topic
 							request, -- [2] = Request
-							broadcasterServerMetadata, -- [3] = BroadcasterServerMetadata
+							broadcaster_server_metadata, -- [3] = BroadcasterServerMetadata
 						}))
 					)
 				end)
 			end
 
-			if not ok then
-				error(err)
-			end
+			if not ok then error(err) end
 		end
 	end
 
-	_G._NextGlobalKey = nextKey
+	_G._NextGlobalKey = next_key
 end
 
---[=[
-	(Two-way communication) Messaging to topic to do an action and get the response (Not-Guaranteed).
-<strong>
-	@yields
-	
-	@param topic: string
-	@param request: T
-	@param approxResponseTime: number? -- [default=6] a waiting seconds before disconnect and return nil response.
-	@param includingMetadata: boolean? -- [default=false] including metadata example server jobId?
-	@return any
-	
-	@error
-</strong><p><em>--Style: Moonwave Documentation</em>
-]=]
-function MessagingManager.InvokeTo<T>(topic: string, request: T, approxResponseTime: number)
-	local invokeToken = `{topic}-{Token:NextBase94JSONSAFE(16)}` -- 94^16 possibility.
-	local signal = LemonSignal.new()
+--- (Two-way communication) Messaging to topic to do an action and get the response (Not-Guaranteed).
+---
+--- @yields
+--- @within MessagingManager
+--- @param topic string
+--- @param request T
+--- @param approx_response_time number? -- [default=6] a waiting seconds before disconnect and return nil response.
+--- @param including_metadata boolean? -- [default=false] including metadata example server jobId?
+--- @return any
+--- @error "MessagingManagerObject not found"
+function MessagingManager.InvokeTo<T>(
+	topic: string,
+	request: T,
+	approx_response_time: number?,
+	including_metadata: boolean?
+)
+	local invoke_token = `{topic}-{Quid.next()}` -- 94^16 possibility.
+	local signal = Signal.new()
 
-	_G.Invokes[invokeToken] = signal
+	_G.Invokes[invoke_token] = signal
 
-	local broadcasterServerMetadata: MessagingMetadata? = messagingMetadata()
+	local broadcaster_server_metadata: messaging_metadata.MessagingMetadata? = if including_metadata
+		then messaging_metadata()
+		else nil
 
-	local ok: boolean, err: string, nextKey, nextChannelInfo
+	local ok: boolean, err: string, next_key, next_channel_info
 	do
 		ok, err = pcall(function()
-			nextKey, nextChannelInfo = next(_G.LiveChannels, _G._NextGlobalKey)
+			next_key, next_channel_info = next(_G.LiveChannels, _G._NextGlobalKey)
 		end)
 
 		if not ok then
-			nextKey, nextChannelInfo = next(_G.LiveChannels)
+			next_key, next_channel_info = next(_G.LiveChannels)
 		end
 	end
 
-	if type(nextChannelInfo) == "table" then
+	if type(next_channel_info) == "table" then
 		if RunService:IsStudio() then
 			-- In-Simulation
-			local messagingManagerObject = _G.Message[topic]
-
-			if messagingManagerObject then
+			local messaging_manager_object = _G.Message[topic]
+			if messaging_manager_object then
 				warn(
-					`(Studio-Mode), MessagingManagerObject {messagingManagerObject.Topic} is simulate not real production.`
+					`(Studio-Mode), MessagingManagerObject {messaging_manager_object.topic} is simulate not real production.`
 				)
 
-				task.delay(random:NextNumber(unpack(SIMULATE_DELAY)), function()
+				task.delay(next_number(table.unpack(Constants.SIMULATE_DELAY)), function()
 					local ok: boolean, err: string, response
 					do
 						ok, err = pcall(function(...)
 							response = {
-								messagingManagerObject.Callback(
+								messaging_manager_object.callback(
 									request,
-									messagingMetadata(messagingMetadata()),
-									messagingMetadata(broadcasterServerMetadata)
+									messaging_metadata(messaging_metadata()),
+									messaging_metadata(broadcaster_server_metadata)
 								),
 							}
 						end)
 					end
 
-					task.wait(random:NextNumber(unpack(SIMULATE_DELAY)))
+					task.wait(next_number(table.unpack(Constants.SIMULATE_DELAY)))
 					signal:Fire(response)
 				end)
 
-				task.delay(approxResponseTime, function()
+				task.delay(approx_response_time, function()
 					signal:Fire()
 				end)
 
@@ -601,40 +327,33 @@ function MessagingManager.InvokeTo<T>(topic: string, request: T, approxResponseT
 
 				-- clean signal prevent memory leak.
 				task.defer(function()
-					if signal then
-						signal:Destroy()
-					end
-
-					_G.Invokes[invokeToken] = nil
+					if signal then signal:Destroy() end
+					_G.Invokes[invoke_token] = nil
 				end)
 
-				if type(response) == "table" then
-					return unpack(response)
-				end
+				if type(response) == "table" then return unpack(response) end
 
 				return response
 			else
-				error(`(Studio-Mode), MessagingManagerObject {topic} not found.`)
+				error("(Studio-Mode), MessagingManagerObject not found")
 			end
 		else
 			-- In-Production
 			task.spawn(function()
 				MessagingService:PublishAsync(
-					nextChannelInfo.Key,
+					next_channel_info.Key,
 					buffer.fromstring(HttpService:JSONEncode({
 						topic,
 						request,
-						broadcasterServerMetadata,
-						invokeToken,
+						broadcaster_server_metadata,
+						invoke_token,
 					}))
 				)
 			end)
 
-			if not ok then
-				error(err)
-			end
+			if not ok then error(err) end
 
-			task.delay(approxResponseTime or DEFAULT_RESPONSE_TIME, function()
+			task.delay(approx_response_time or Constants.DEFAULT_RESPONSE_TIME, function()
 				signal:Fire()
 			end)
 
@@ -642,38 +361,31 @@ function MessagingManager.InvokeTo<T>(topic: string, request: T, approxResponseT
 
 			-- clean signal prevent memory leak.
 			task.defer(function()
-				if signal then
-					signal:Destroy()
-				end
-				_G.Invokes[invokeToken] = nil
+				if signal then signal:Destroy() end
+				_G.Invokes[invoke_token] = nil
 			end)
 
-			if type(response) == "table" then
-				return unpack(response)
-			end
+			if type(response) == "table" then return unpack(response) end
 
 			return response
 		end
 	end
 
-	_G._NextGlobalKey = nextKey
+	_G._NextGlobalKey = next_key
 end
 
-local playerAddedConnection
-local playerRemovingConnection
-
---[=[
-	Disconnect all of subscription.
-]=]
+--- Disconnect all of subscription.
+---
+--- @within MessagingManager
 function MessagingManager:DisconnectAll()
-	if typeof(playerAddedConnection) == "RBXScriptConnection" then
-		playerAddedConnection:Disconnect()
-		playerAddedConnection = nil
+	if typeof(player_added_connection) == "RBXScriptConnection" then
+		player_added_connection:Disconnect()
+		player_added_connection = nil
 	end
 
-	if typeof(playerRemovingConnection) == "RBXScriptConnection" then
-		playerRemovingConnection:Disconnect()
-		playerRemovingConnection = nil
+	if typeof(player_removing_connection) == "RBXScriptConnection" then
+		player_removing_connection:Disconnect()
+		player_removing_connection = nil
 	end
 
 	for topic in _G.Message do
@@ -681,62 +393,88 @@ function MessagingManager:DisconnectAll()
 	end
 
 	for _, signal in _G.Invokes do
-		if signal then
-			signal:Destroy()
-		end
+		if signal then signal:Destroy() end
 	end
 
 	table.clear(_G.Message)
 	table.clear(_G.Invokes)
 end
 
---[=[
-	Aliase of `:DisconnectAll()` method.
-]=]
+--- Aliase of `:DisconnectAll()` method.
+---
+--- @function Destroy
+--- @within MessagingManager
 MessagingManager.Destroy = MessagingManager.DisconnectAll
---MessagingManager:DisconnectAll()
 
-do -- MessagingScaler
-	local MessagingScaler = MessagingManager.new("MessagingScaler", function(request, metadata)
+--- @within MessagingManager
+--- @private
+--- @prop _connections { RBXScriptConnection }
+MessagingManager._connections = {}
+
+--[=[
+	@class Ports
+	@private
+
+	Module containing ports for the MessagingManager.
+]=]
+MessagingManager.ports = {}
+
+--- MessagingPort: messaging_scaler
+--- A port for scaling the subscription automatically.
+--- Based current player count per server.
+---
+--- @within Ports
+--- @prop messaging_scaler MessagingManagerObject
+do
+	MessagingManager.ports.messaging_scaler = MessagingManager.new("messaging_scaler", function(request, metadata)
 		local toggle = request.Toggle
 		local userId = request.UserId
-
 		if toggle == true then
+			-- Booting a new subscription. with Concur model.
 			task.spawn(function()
-				local Broker = BrokerRequest.new(20, 10)
+				local concurs = {}
 
-				for SubChannel = 1, UNIT_SCALE_PER_PLAYER do
-					Broker:AddRequest(function()
-						local ok, err, response
-						do
-							ok, err = pcall(function()
-								response = {}
-								response.Key = `@{userId}{KEY_ENDPOINT}{SubChannel}`
-								response.Subscriber = MessagingService:SubscribeAsync(response.Key, CentralizedEndpoint)
-							end)
+				for subChannel = 1, Constants.UNIT_SCALE_PER_PLAYER do
+					table.insert(
+						concurs,
+						Concur.spawn(function()
+							local ok, err, response
+							do
+								ok, err = pcall(function()
+									response = {}
+									response.Key = `@{userId}{Constants.KEY_ENDPOINT}{subChannel}`
+									response.Subscriber =
+										MessagingService:SubscribeAsync(response.Key, MessagingManager.factory_function)
+								end)
+							end
+
+							return { ok, response, err }
+						end)
+					)
+
+					local all = Concur.all(concurs)
+					all:OnCompleted(function(_, values)
+						for _, concurResult in ipairs(values) do
+							local _, result = table.unpack(concurResult)
+							if result then
+								local channelInfo = result[2]
+								if channelInfo then _G.LiveChannels[channelInfo.Key] = channelInfo end
+							end
 						end
-
-						return { ok, response, err }
+						-- print(values) --> {{nil, 10}, {nil, 15}, {nil, 20}, {"failed", nil}}
 					end)
-				end
 
-				local responseBlock, overallSuccess = Broker:Run()
-
-				if not overallSuccess then
-					warn("MessagingManager, some channel are missing.")
-				end
-
-				for _, wrap in responseBlock do
-					local channelInfo = wrap[2]
-
-					if channelInfo then
-						_G.LiveChannels[channelInfo.Key] = channelInfo
+					local _, result = all:Await()
+					if type(result) == "table" and result[3] then
+						warn(`[MessagingManager]: Due to error {result[3]}, some channel will be missing.`)
 					end
+
+					table.clear(concurs)
 				end
 			end)
 		else
-			for subChannel = 1, UNIT_SCALE_PER_PLAYER do
-				local key = `@{userId}{KEY_ENDPOINT}{subChannel}`
+			for subChannel = 1, Constants.UNIT_SCALE_PER_PLAYER do
+				local key = `@{userId}{Constants.KEY_ENDPOINT}{subChannel}`
 				local channelInfo = _G.LiveChannels[key]
 
 				if type(channelInfo) == "table" then
@@ -748,45 +486,53 @@ do -- MessagingScaler
 		end
 	end)
 
-	local function onPlayerAdded(player: Player)
-		MessagingScaler:Fire({
+	local function on_player_added(player: Player)
+		MessagingManager.ports.messaging_scaler:Fire({
 			UserId = player.UserId,
 			Toggle = true,
 		})
 	end
 
-	local function onPlayerRemoving(player: Player)
-		MessagingScaler:Fire({
+	local function on_player_removing(player: Player)
+		MessagingManager.ports.messaging_scaler:Fire({
 			UserId = player.UserId,
 			Toggle = false,
 		})
 	end
 
-	for _, Player in Players:GetPlayers() do
-		task.spawn(onPlayerAdded, Player)
+	for _, player in Players:GetPlayers() do
+		task.spawn(on_player_added, player)
 	end
 
-	playerAddedConnection = Players.PlayerAdded:Connect(onPlayerAdded)
-	playerRemovingConnection = Players.PlayerRemoving:Connect(onPlayerRemoving)
+	MessagingManager._connections.player_added = Players.PlayerAdded:Connect(on_player_added)
+	MessagingManager._connections.player_removing = Players.PlayerRemoving:Connect(on_player_removing)
 end
 
-do -- MessagingInvokeReceptor
-	local MessagingInvokeReceptor = MessagingManager.new(
-		"MessagingInvokeReceptor",
-		function(request, currentServerMetadata: MessagingMetadata, broadcasterServerMetadata: MessagingMetadata?)
+--- MessagingPort: messaging_invoke_receptor
+--- A port for receiving the response from the other server.
+--- Act like a router and [`RemoteFunction`](https://developer.roblox.com/en-us/api-reference/class/RemoteFunction) but for messaging.
+---
+--- @within Ports
+--- @prop messaging_invoke_receptor MessagingManagerObject
+do
+	MessagingManager.ports.messaging_invoke_receptor = MessagingManager.new(
+		"messaging_invoke_receptor",
+		function(
+			request,
+			current_server_metadata: messaging_metadata.MessagingMetadata,
+			broadcaster_server_metadata: messaging_metadata.MessagingMetadata
+		)
 			local from = request[1] -- [1] = From
 			local to = request[2]
 			local response = request[3]
-			local invokeToken = request[4]
-
+			local invoke_token = request[4]
 			if to == game.JobId then
-				if type(invokeToken) == "string" then
-					local invoke: LemonSignal.Signal = _G.Invokes[invokeToken]
-
+				if type(invoke_token) == "string" then
+					local invoke: Signal.Signal = _G.Invokes[invoke_token]
 					if invoke then
 						invoke:Fire(response)
 						invoke:Destroy()
-						_G.Invokes[invokeToken] = nil
+						_G.Invokes[invoke_token] = nil
 					end
 				end
 			end

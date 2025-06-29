@@ -1,4 +1,5 @@
 std = "roblox"
+exclude = ["**/.typedefs/**", "*.spec.lua", "**/*.mdc", "**/Packages/**"]
 
 [config]
 # Allow for `_G.__DEV__` (etc) with packages like React-lua
@@ -8,5 +9,7 @@ global_usage = { ignore_pattern = "^__" }
 shadowing = "allow"
 global_usage = "allow"
 undefined_variable = "allow"
-unused_variable = "allow"
 unscoped_variables = "allow"
+incorrect_standard_library_use = "allow"
+multiple_statements = "allow"
+unused_variable = "allow"

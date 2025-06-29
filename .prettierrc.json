@@ -1,0 +1,15 @@
+{
+	"arrowParens": "always",
+	"bracketSpacing": true,
+	"bracketSameLine": true,
+	"importOrder": ["<THIRD_PARTY_MODULES>", "^@/lib/(.*)$", "^@/components/(.*)$", "^@/app/(.*)$", "^./(.*)$"],
+	"importOrderSeparation": true,
+	"importOrderSortSpecifiers": true,
+	"trailingComma": "es5",
+	"tabWidth": 4,
+	"semi": false,
+	"useTabs": true,
+	"printWidth": 120,
+	"endOfLine": "lf",
+	"proseWrap": "always"
+}

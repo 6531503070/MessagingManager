@@ -1,0 +1,30 @@
+{
+  "name": "MessagingManager",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "DevPackages": {
+        "$path": "DevPackages",
+        "$keepUnknowns": true
+      },
+      "Packages": {
+        "$path": "Packages",
+        "$keepUnknowns": true
+      }
+    },
+    "ServerScriptService": {
+      "ServerPackages": {
+        "$path": "ServerPackages",
+        "MessagingManager": {
+          "$path": "src"
+        },
+        "$keepUnknowns": true
+      },
+      "Tests": {
+        "$path": "test",
+        "$keepUnknowns": true
+      }
+    }
+  }
+}
