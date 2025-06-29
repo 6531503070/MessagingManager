@@ -1,28 +1,25 @@
 # MessagingManager
 
-A module centralized MessagingService topic subscription, by use one global endpoint.
-And provide feature, share publish request and scalable based on player size per server.
+A typed roblox module for dealing MessagingService with an efficient way.
 
 # Exmaple
 ```lua
-local MessagingManager = require(script.MessagingManager)
+local Players = game:GetService("Players")
+local MessagingManager = require(path.to.MessagingManager)
 
--- Messenger
-local ShutdownMessenger = MessagingManager.new("Shutdown", function(Param)
-    -- Receiver
-	local function Kick(Player: Player, ...)
-		Player:Kick(...)
-	end
+local ShutdownMessenger = MessagingManager.new("Shutdown", function(request, currentServerMetadata: MessagingManager.MessagingMetadata, broadcasterServerMetadata: MessagingManager.MessagingMetadata) 
+	-- receiver()
 	for _, player in game.Players:GetPlayers() do
-		Kick(player, `Server Shutting Down. (@{os.date("*t", Param.Date)})`)
+		player:Kick(player, `Server Shutting Down. (@{os.date("*t", request.Date)})`)
 	end
+	
 	game.Players.PlayerAdded:Connect(function(player: Player) 
-		Kick(player, `Server Shutting Down. (@{os.date("*t", Param.Date)})`)
+		player:Kick(player, `Server Shutting Down. (@{os.date("*t", request.Date)})`)
 	end)
 end)
 
--- Sender
-ShutdownMessenger:Pub({
+-- sender()
+ShutdownMessenger:Fire({
 	Date = os.time()
 })
 ```
