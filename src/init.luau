@@ -7,9 +7,9 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local Concur = require(ServerScriptService.ServerPackages.Concur)
-local Quid = require(ServerScriptService.ServerPackages.Quid)
-local Signal = require(ServerScriptService.ServerPackages.Signal)
+local Concur = require(script.Parent.Concur)
+local Quid = require(script.Parent.Quid)
+local Signal = require(script.Parent.Signal)
 local messaging_metadata = require(script.messaging_metadata)
 
 local Constants = require(script.Constants)
