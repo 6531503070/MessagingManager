@@ -34,6 +34,7 @@
 # Packages
 Packages
 DevPackages
+ServerPackages
 
 # Misc files
 .DS_Store
