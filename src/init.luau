@@ -5,7 +5,6 @@ local HttpService = game:GetService("HttpService")
 local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ServerScriptService = game:GetService("ServerScriptService")
 
 local Concur = require(script.Parent.Concur)
 local Quid = require(script.Parent.Quid)

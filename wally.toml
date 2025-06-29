@@ -1,19 +1,13 @@
 [package]
 name = "6531503070/messagingmanager"
-version = "2.0.2"
+version = "2.0.3"
 registry = "https://github.com/UpliftGames/wally-index"
 licence = "MIT"
 authors = ["6531503070"]
 description = "A wrapper module dealing MessagingService better and efficient for Roblox"
 realm = "server"
 exclude = ["**"]
-include = [
-    "default.project.json",
-    "src",
-    "src/**",
-    "LICENSE",
-    "wally.toml",
-]
+include = ["default.project.json", "src", "src/**", "LICENSE", "wally.toml"]
 
 [server-dependencies]
 Signal = "sleitnick/signal@2.0.3"
